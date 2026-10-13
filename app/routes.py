@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from functools import wraps
 from html import escape
 
@@ -10,7 +10,7 @@ from jwt import InvalidTokenError
 from app.extensions import db
 from app.models import Data, User
 
-
+BEARER_SCHEME = "Bearer"
 api = Blueprint("api", __name__)
 
 
@@ -101,7 +101,7 @@ def login():
     if not password_matches:
         return jsonify({"error": "invalid login or password"}), 401
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     token = jwt.encode(
         {
             "sub": str(user.id),
@@ -117,7 +117,7 @@ def login():
     return jsonify(
         {
             "access_token": token,
-            "token_type": "Bearer",
+            "token_type": BEARER_SCHEME,
             "expires_in": current_app.config["JWT_TTL_MINUTES"] * 60,
         }
     )
@@ -147,6 +147,8 @@ def create_data():
     name = payload.get("name")
     description = payload.get("description")
     extra_fields = payload.get("extra_fields", {})
+    if not isinstance(extra_fields, dict):
+        return jsonify({"error": "extra_fields must be an object"}), 400
 
     if not isinstance(name, str) or not name.strip() or len(name) > 255:
         return (
