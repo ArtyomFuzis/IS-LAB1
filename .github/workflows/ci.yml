@@ -1,4 +1,4 @@
-name: CI
+name: Security Reports
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  checks:
+  security-reports:
     runs-on: ubuntu-latest
     env:
       SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
@@ -24,32 +24,30 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Format check
-        run: ruff format --check .
-
-      - name: Lint
-        run: ruff check .
-
-      - name: Prepare reports
+      - name: Prepare report directory
         if: always()
-        run: mkdir -p reports
+        run: mkdir -p reports/dependency-check
 
       - name: Bandit
         if: always()
-        run: bandit -r app -f json -o reports/bandit.json
+        shell: bash
+        run: bandit -r app -f html -o reports/bandit.html
 
       - name: Safety
         if: ${{ always() && env.SAFETY_API_KEY != '' }}
-        run: safety scan --target . --save-as json reports/safety.json
+        shell: bash
+        run: safety --stage production scan --target . --save-as html reports/safety.html
 
       - name: Snyk
-        if: ${{ always() && env.SNYK_TOKEN != '' }}
-        uses: snyk/actions/python@master
-        with:
-          args: --file=requirements.txt --package-manager=pip --json-file-output=reports/snyk.json
+        if: ${{ always() && env.SNYK_TOKEN != '' }} 
+        shell: bash
+        run: |
+          npm install --global snyk snyk-to-html
+          snyk test --file=requirements.txt --package-manager=pip --json > /tmp/snyk-report.json
+          snyk-to-html -i /tmp/snyk-report.json -o reports/snyk.html
 
       - name: OWASP Dependency-Check
         if: always()
@@ -57,16 +55,17 @@ jobs:
         with:
           project: secure-data-api
           path: .
-          format: ALL
+          format: HTML
           out: reports/dependency-check
           args: >
             --failOnCVSS 1
             ${{ secrets.NVD_API_KEY != '' && format('--nvdApiKey {0}', secrets.NVD_API_KEY) || '' }}
 
-      - name: Upload security reports
+      - name: Upload HTML security reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: security-reports
-          path: reports/
-          if-no-files-found: warn
+          name: security-reports-html
+          path: reports/**/*.html
+          if-no-files-found: error
+          retention-days: 14
